@@ -1,0 +1,23 @@
+name: megaode
+channels:
+  - pytorch
+  - pyg
+  - dglteam
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.9
+  - numpy
+  - pandas
+  - scipy=1.10.1
+  - scikit-learn=1.4.0
+  - matplotlib=3.8.3
+  - networkx
+  - pytorch=2.1.2
+  - torchdata=0.7.1
+  - pyg
+  - pip
+  - pip:
+      - dgl==2.1.0
+      - torchdyn==1.0.6
+      - torchdiffeq==0.2.3

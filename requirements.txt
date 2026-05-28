@@ -1,0 +1,12 @@
+numpy
+pandas
+scipy==1.10.1
+scikit-learn==1.4.0
+matplotlib==3.8.3
+networkx
+torch==2.1.2
+dgl==2.1.0
+torchdata==0.7.1
+torchdyn==1.0.6
+torchdiffeq==0.2.3
+torch-geometric

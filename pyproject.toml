@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "megaode"
+version = "0.1.0"
+description = "MEGA-ODE: mixture-enhanced graph attention neural ODEs for omics dynamics."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+  { name = "MEGA-ODE contributors" }
+]
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy==1.10.1",
+  "scikit-learn==1.4.0",
+  "matplotlib==3.8.3",
+  "networkx",
+  "torch==2.1.2",
+  "dgl==2.1.0",
+  "torchdata==0.7.1",
+  "torchdyn==1.0.6",
+  "torchdiffeq==0.2.3",
+  "torch-geometric"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
