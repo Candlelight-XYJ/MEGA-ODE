@@ -2,6 +2,10 @@
 
 MEGA-ODE: Mixture-Enhanced Graph Attention ODE for Generalizable and Interpretable Modeling of Omics Dynamics.
 
+<p align="center">
+  <img src="docs/images/fig1.png" alt="MEGA-ODE architecture overview" width="900">
+</p>
+
 MEGA-ODE is a multi-level graph-based framework for generalizable and interpretable modeling of omics dynamics. It embeds prior biological knowledge by defining the ODE state space on a molecular interaction network parameterized by graph attention networks, and uses a mixture-of-experts architecture to capture heterogeneous dynamic behaviors across perturbations, timepoints, and molecular programs.
 
 ## Collaborators
