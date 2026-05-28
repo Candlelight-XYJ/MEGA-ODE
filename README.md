@@ -4,7 +4,11 @@ MEGA-ODE: Mixture-Enhanced Graph Attention ODE for Generalizable and Interpretab
 
 MEGA-ODE is a multi-level graph-based framework for generalizable and interpretable modeling of omics dynamics. It embeds prior biological knowledge by defining the ODE state space on a molecular interaction network parameterized by graph attention networks, and uses a mixture-of-experts architecture to capture heterogeneous dynamic behaviors across perturbations, timepoints, and molecular programs.
 
-Project website: https://candlelight-xyj.github.io/MEGA-ODE/
+## Collaborators
+
+- [Candlelight-XYJ](https://github.com/Candlelight-XYJ)
+- [yonggeli66](https://github.com/yonggeli66)
+
 
 ## Highlights
 
@@ -31,8 +35,6 @@ conda env create -f environment.yml
 conda activate megaode
 pip install -e .
 ```
-
-`torch`, `dgl`, `torch-geometric`, and CUDA builds are version-sensitive. On a GPU server, install PyTorch, DGL, and PyG wheels that match your CUDA driver before running MEGA-ODE.
 
 ## Quick Start
 
@@ -169,11 +171,6 @@ python -c "import megaode; print('MEGA-ODE import successful')"
 python -c "import torch, dgl, torchdyn, torch_geometric; print('core dependencies import successful')"
 python -m pytest tests
 ```
-
-## Collaborators
-
-- [Candlelight-XYJ](https://github.com/Candlelight-XYJ)
-- [yonggeli66](https://github.com/yonggeli66)
 
 ## Citation
 
