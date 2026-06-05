@@ -1,6 +1,6 @@
 # MEGA-ODE
 
-MEGA-ODE: Mixture-Enhanced Graph Attention ODE for Generalizable and Interpretable Modeling of Omics Dynamics.
+MEGA-ODE: Biologically Structured Generalizable and Interpretable Continuous Modeling of Perturbation Omics.
 
 <p align="center">
   <img src="docs/images/fig1.png" alt="MEGA-ODE architecture overview" width="900">
