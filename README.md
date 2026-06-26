@@ -1,6 +1,6 @@
 # MEGA-ODE
 
-## MEGA-ODE: Biologically Structured Generalizable and Interpretable Continuous Modeling of Perturbation Omics.
+## MEGA-ODE: Biologically Structured, Generalizable and Navigable Continuous Perturbation Dynamics from Sparse Omics.
 
 <p align="center">
   <img src="docs/images/fig1.png" alt="MEGA-ODE architecture overview" width="900">
