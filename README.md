@@ -1,6 +1,6 @@
 # MEGA-ODE
 
-## MEGA-ODE: Biologically Structured, Generalizable and Navigable Continuous Perturbation Dynamics from Sparse Omics.
+## MEGA-ODE: Learning Biologically Structured and Navigable Continuous Perturbation Dynamics from Sparse Omics.
 
 <p align="center">
   <img src="docs/images/fig1.png" alt="MEGA-ODE architecture overview" width="900">
