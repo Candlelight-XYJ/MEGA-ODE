@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 import torch
 import torch.nn as nn
@@ -16,8 +17,125 @@ from .metrics import combined_loss
 from .utils import get_device, set_seed
 
 
+SUPPORTED_ODE_FUNCTIONS = {"gat", "mlp"}
+
+
+def _validate_ode_function(ode_function: str) -> str:
+    ode_function_name = ode_function.lower()
+    if ode_function_name not in SUPPORTED_ODE_FUNCTIONS:
+        raise ValueError(
+            f"Unsupported ode_function: {ode_function}. "
+            "Choose from {'gat', 'mlp'}."
+        )
+    return ode_function_name
+
+
+class MLPODEFunc(nn.Sequential):
+    """Original time-independent MLP used to parameterize dh/dt."""
+
+    def __init__(self, hidden_size: int, ode_hidden_size: int = 256) -> None:
+        super().__init__(
+            nn.Linear(hidden_size, ode_hidden_size),
+            nn.LeakyReLU(0.1),
+            nn.Linear(ode_hidden_size, ode_hidden_size),
+            nn.LeakyReLU(0.1),
+            nn.Linear(ode_hidden_size, hidden_size),
+        )
+
+
+class GATODEFunc(nn.Module):
+    """Graph-attention vector field with the same input/output state size."""
+
+    def __init__(
+        self,
+        hidden_size: int,
+        edge_index: Optional[torch.Tensor] = None,
+        gat_hidden_size: int = 256,
+        heads: int = 4,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.gat1 = GATConv(
+            hidden_size,
+            gat_hidden_size,
+            heads=heads,
+            dropout=dropout,
+        )
+        self.gat2 = GATConv(
+            gat_hidden_size * heads,
+            gat_hidden_size,
+            heads=heads,
+            dropout=dropout,
+        )
+        self.gat3 = GATConv(
+            gat_hidden_size * heads,
+            hidden_size,
+            heads=1,
+            dropout=dropout,
+        )
+        self.activation = nn.LeakyReLU(0.2)
+        self.register_buffer(
+            "edge_index",
+            torch.empty((2, 0), dtype=torch.long),
+            persistent=False,
+        )
+        if edge_index is not None:
+            self.set_edge_index(edge_index)
+
+    def set_edge_index(self, edge_index: torch.Tensor) -> None:
+        """Bind a pre-built PyG edge index without copying or moving it."""
+        if edge_index.dtype != torch.long:
+            raise TypeError("edge_index must have dtype torch.long.")
+        if edge_index.ndim != 2 or edge_index.shape[0] != 2:
+            raise ValueError("edge_index must have shape [2, num_edges].")
+        self.edge_index = edge_index
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        if h.ndim != 2 or h.shape[1] != self.hidden_size:
+            raise ValueError(
+                "GATODEFunc expects h with shape "
+                f"[num_nodes, {self.hidden_size}], got {tuple(h.shape)}."
+            )
+        if self.edge_index.numel() == 0:
+            raise RuntimeError("GATODEFunc requires a non-empty edge_index.")
+        if self.edge_index.device != h.device:
+            raise RuntimeError(
+                "edge_index and the ODE state must be on the same device."
+            )
+        h_next = self.activation(self.gat1(h, self.edge_index))
+        h_next = self.activation(self.gat2(h_next, self.edge_index))
+        return self.gat3(h_next, self.edge_index)
+
+
+def build_ode_function(
+    ode_function: str = "gat",
+    *,
+    hidden_size: int,
+    edge_index: Optional[torch.Tensor] = None,
+    ode_hidden_size: int = 256,
+    gat_hidden_size: int = 256,
+    gat_heads: int = 4,
+    gat_dropout: float = 0.0,
+) -> nn.Module:
+    """Build an ODE vector field from a validated configuration value."""
+    ode_function_name = _validate_ode_function(ode_function)
+    if ode_function_name == "gat":
+        return GATODEFunc(
+            hidden_size=hidden_size,
+            edge_index=edge_index,
+            gat_hidden_size=gat_hidden_size,
+            heads=gat_heads,
+            dropout=gat_dropout,
+        )
+    return MLPODEFunc(
+        hidden_size=hidden_size,
+        ode_hidden_size=ode_hidden_size,
+    )
+
+
 class GATODEMLP(nn.Module):
-    """GAT + Neural ODE expert module from the original notebook."""
+    """GAT encoder, configurable Neural ODE, and MLP decoder expert."""
 
     def __init__(
         self,
@@ -28,30 +146,49 @@ class GATODEMLP(nn.Module):
         heads: int = 2,
         dropout: float = 0.0,
         ode_hidden_size: int = 256,
+        ode_function: str = "gat",
+        ode_gat_hidden_size: int = 256,
+        ode_gat_heads: int = 4,
+        ode_gat_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.dropout = dropout
         self.heads = heads
         self.time_tick_num = time_tick_num
+        self.ode_function = _validate_ode_function(ode_function)
         self.gatconv1 = GATConv(in_channels=in_feats, out_channels=gat_hidden_feats, heads=self.heads)
         self.gatconv11 = GATConv(in_channels=gat_hidden_feats * self.heads, out_channels=gat_hidden_feats, heads=1)
-        activation = nn.LeakyReLU(0.1)
-        func_ode = nn.Sequential(
-            nn.Linear(gat_hidden_feats, ode_hidden_size),
-            activation,
-            nn.Linear(ode_hidden_size, ode_hidden_size),
-            activation,
-            nn.Linear(ode_hidden_size, gat_hidden_feats),
+        func_ode = build_ode_function(
+            ode_function=self.ode_function,
+            hidden_size=gat_hidden_feats,
+            ode_hidden_size=ode_hidden_size,
+            gat_hidden_size=ode_gat_hidden_size,
+            gat_heads=ode_gat_heads,
+            gat_dropout=ode_gat_dropout,
         )
         self.neuralDE = NeuralODE(func_ode, solver="rk4")
         self.linear1 = nn.Linear((self.time_tick_num - 1) * gat_hidden_feats, (self.time_tick_num - 1) * gat_hidden_feats)
         self.linear11 = nn.Linear((self.time_tick_num - 1) * gat_hidden_feats, (self.time_tick_num - 1) * out_feats)
+
+    @property
+    def ode_func(self) -> nn.Module:
+        """Return the vector field nested inside torchdyn's DEFunc wrappers."""
+        vector_field = self.neuralDE.vf
+        while not isinstance(vector_field, (GATODEFunc, MLPODEFunc)):
+            if not hasattr(vector_field, "vf"):
+                raise TypeError(
+                    "Could not locate the configured ODE function inside NeuralODE."
+                )
+            vector_field = vector_field.vf
+        return vector_field
 
     def forward(self, h: torch.Tensor, edge_index: torch.Tensor, return_attention_weights: bool = True):
         gath = self.gatconv1(h, edge_index)
         gath = F.leaky_relu(gath, 0.2)
         gath = F.dropout(gath, p=self.dropout, training=self.training)
         gath, attenmat = self.gatconv11(gath, edge_index, return_attention_weights=return_attention_weights)
+        if isinstance(self.ode_func, GATODEFunc):
+            self.ode_func.set_edge_index(edge_index)
         t_span = torch.linspace(0, self.time_tick_num - 1, self.time_tick_num, device=h.device)
         _, ode_h = self.neuralDE(gath, t_span)
         ode_h = ode_h[1:]
@@ -78,10 +215,28 @@ class ODE_MOE(nn.Module):
         gate_hidden_dim: int,
         heads: int = 2,
         dropout: float = 0.0,
+        ode_hidden_size: int = 256,
+        ode_function: str = "gat",
+        ode_gat_hidden_size: int = 256,
+        ode_gat_heads: int = 4,
+        ode_gat_dropout: float = 0.0,
     ) -> None:
         super().__init__()
+        self.ode_function = _validate_ode_function(ode_function)
         self.experts = nn.ModuleList([
-            GATODEMLP(in_feats, hidden_size, out_feats, time_tick_num, heads=heads, dropout=dropout)
+            GATODEMLP(
+                in_feats,
+                hidden_size,
+                out_feats,
+                time_tick_num,
+                heads=heads,
+                dropout=dropout,
+                ode_hidden_size=ode_hidden_size,
+                ode_function=self.ode_function,
+                ode_gat_hidden_size=ode_gat_hidden_size,
+                ode_gat_heads=ode_gat_heads,
+                ode_gat_dropout=ode_gat_dropout,
+            )
             for _ in range(num_experts)
         ])
         self.gating = nn.Sequential(
@@ -121,6 +276,11 @@ class MEGAODE(nn.Module):
         gate_hidden_dim: int = 32,
         heads: int = 2,
         dropout: float = 0.0,
+        ode_hidden_size: int = 256,
+        ode_function: str = "gat",
+        ode_gat_hidden_size: int = 256,
+        ode_gat_heads: int = 4,
+        ode_gat_dropout: float = 0.0,
         device: Optional[Union[str, torch.device]] = None,
         seed: Optional[int] = 123,
     ) -> None:
@@ -131,17 +291,31 @@ class MEGAODE(nn.Module):
         self.out_feats = out_feats or in_feats
         self.time_tick_num = time_tick_num
         self.device = get_device(device)
-        self.network = ODE_MOE(
-            in_feats=in_feats,
-            hidden_size=hidden_size,
-            num_experts=num_experts,
-            out_feats=self.out_feats,
-            time_tick_num=time_tick_num,
-            gate_hidden_dim=gate_hidden_dim,
-            heads=heads,
-            dropout=dropout,
-        ).to(self.device)
+        self.ode_function = _validate_ode_function(ode_function)
+        self._model_config = {
+            "in_feats": in_feats,
+            "hidden_size": hidden_size,
+            "num_experts": num_experts,
+            "out_feats": self.out_feats,
+            "time_tick_num": time_tick_num,
+            "gate_hidden_dim": gate_hidden_dim,
+            "heads": heads,
+            "dropout": dropout,
+            "ode_hidden_size": ode_hidden_size,
+            "ode_function": self.ode_function,
+            "ode_gat_hidden_size": ode_gat_hidden_size,
+            "ode_gat_heads": ode_gat_heads,
+            "ode_gat_dropout": ode_gat_dropout,
+        }
+        self._build_network()
         self.history_: Dict[str, List[float]] = {"loss": []}
+
+    def _build_network(self) -> None:
+        self.network = ODE_MOE(**self._model_config).to(self.device)
+        self.in_feats = self._model_config["in_feats"]
+        self.out_feats = self._model_config["out_feats"]
+        self.time_tick_num = self._model_config["time_tick_num"]
+        self.ode_function = self._model_config["ode_function"]
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
         return self.network(x.to(self.device), edge_index.to(self.device))
@@ -208,8 +382,54 @@ class MEGAODE(nn.Module):
         return [_predict_graph(graph) for graph in data.graphs]
 
     def save(self, path: Union[str, Path]) -> None:
-        torch.save(self.network.state_dict(), path)
+        torch.save(
+            {
+                "format_version": 2,
+                "model_config": dict(self._model_config),
+                "ode_function": self.ode_function,
+                "state_dict": self.network.state_dict(),
+            },
+            path,
+        )
 
     def load(self, path: Union[str, Path], map_location: Optional[str] = None) -> "MEGAODE":
-        self.network.load_state_dict(torch.load(path, map_location=map_location or self.device))
+        checkpoint = torch.load(path, map_location=map_location or self.device)
+        if not isinstance(checkpoint, Mapping):
+            raise TypeError("Checkpoint must contain a state dict or checkpoint mapping.")
+
+        if "state_dict" in checkpoint:
+            state_dict = checkpoint["state_dict"]
+            stored_config = dict(checkpoint.get("model_config", {}))
+            if "ode_function" not in stored_config:
+                stored_config["ode_function"] = checkpoint.get("ode_function")
+            if stored_config["ode_function"] is None:
+                stored_config["ode_function"] = self._infer_ode_function(state_dict)
+            model_config = {**self._model_config, **stored_config}
+        else:
+            # Version-1 checkpoints were bare state dicts from the MLP-only model.
+            state_dict = checkpoint
+            model_config = {
+                **self._model_config,
+                "ode_function": self._infer_ode_function(state_dict),
+            }
+
+        model_config["ode_function"] = _validate_ode_function(
+            model_config["ode_function"]
+        )
+        if model_config != self._model_config:
+            self._model_config = model_config
+            self._build_network()
+        self.network.load_state_dict(state_dict)
         return self
+
+    @staticmethod
+    def _infer_ode_function(state_dict: Mapping[str, torch.Tensor]) -> str:
+        keys = tuple(state_dict)
+        if any(".neuralDE." in key and ".gat1." in key for key in keys):
+            return "gat"
+        if any(".neuralDE." in key and ".0." in key for key in keys):
+            return "mlp"
+        raise ValueError(
+            "Checkpoint has no ode_function configuration and its state dict "
+            "does not match a recognized GAT or legacy MLP ODE function."
+        )

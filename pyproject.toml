@@ -27,5 +27,8 @@ dependencies = [
   "torch-geometric"
 ]
 
+[project.scripts]
+megaode-demo = "megaode.demo:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]

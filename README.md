@@ -63,8 +63,19 @@ model = MEGAODE(
     out_feats=data.num_features,
     time_tick_num=5,
     gate_hidden_dim=32,
+    ode_function="gat",  # default; use "mlp" for the original baseline
 )
 
 model.fit(data, epochs=100, lr=1e-3)
 pred = model.predict(data, input_key="x36", output_index=3)
 ```
+
+The ODE vector field can be selected through the Python API or demo CLI:
+
+```bash
+megaode-demo --ode-function gat
+megaode-demo --ode-function mlp
+```
+
+`gat` is the default. The GAT vector field reuses each input graph's pre-built
+PyG `edge_index`; `mlp` retains the original graph-independent ODE function.
