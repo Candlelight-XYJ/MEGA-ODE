@@ -8,6 +8,12 @@
 
 MEGA-ODE is a multi-level graph-based framework for generalizable and interpretable modeling of omics dynamics. It embeds prior biological knowledge by defining the ODE state space on a molecular interaction network parameterized by graph attention networks, and uses a mixture-of-experts architecture to capture heterogeneous dynamic behaviors across perturbations, timepoints, and molecular programs.
 
+## Citation
+MEGA-ODE: Learning Biologically Structured and Navigable Continuous Perturbation Dynamics from Sparse Omics.
+Yujia Xiang, Yongge Li, Chunyan Tian, Ruichu Gu, Fuchu He, Han Wen, Linhai Xie, Peijie Zhou
+
+bioRxiv 2026.08.05.742921; doi: https://doi.org/10.64898/2026.08.05.742921
+
 ## Collaborators
 
 - [Candlelight-XYJ](https://github.com/Candlelight-XYJ)
